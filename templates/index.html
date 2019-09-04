@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Simple Chat</title>
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+
+    <!-- Custom stylesheet -->
+    <link rel="stylesheet" href="static/main.css">
+
+    <!-- jQuery & SocketIO -->
+    <script src="//code.jquery.com/jquery-1.12.4.min.js" integrity="sha256-ZosEbRLbNQzLpnKIkEdrPv7lOy9C27hHQ+Xp8a4MxAQ=" crossorigin="anonymous"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.js" integrity="sha256-yr4fRk/GU1ehYJPAs8P4JlTgu0Hdsp4ZKrx8bDEDC3I=" crossorigin="anonymous"></script>
+
+    <script type="text/javascript" charset="utf-8">
+    $(document).ready(function() {
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        // production
+        // var socket = io.connect('https://' + document.domain + ':' + location.port);
+
+        let currentPage;
+        let totalMsgs;
+        let totalPages;
+
+        // event handler for new connections.
+        socket.on('connect', function() {
+          try {
+            console.log('Succesful connection');
+            socket.emit('succesful_connection');
+            currentPage = 1;
+          }
+          catch (e) {
+            console.log(e);
+          }
+        });
+
+        // event handler to load messages
+        socket.on('load_msgs', function(data) {
+          totalMsgs = data.len;
+          updatePagination();
+          console.log('Total msgs: ' + totalMsgs);
+
+          $('#chat').empty();
+          for (var i = 0; i < data.msgs.length; i++) {
+            const msg = data.msgs[i];
+            // $('#chat').append('<br>' + $('<div/>').append(msg.username + ': ' + msg.content).html());
+            $('#chat').append('<div class="message-card"><b style="color: #000">'+msg.username+'</b> '+ '(' +msg.timestamp+ '): '+msg.content+'</div>');
+            // $('#chat').append('<div>' + name + content + timestamp + '</div>');
+          }
+        });
+
+        // event handler for no messages
+        socket.on('no_msgs', function(data) {
+          totalMsgs = 0;
+          updatePagination();
+          console.log('Total msgs: ' + totalMsgs);
+          $('#chat').append('<h3>The chat is empty</h3>');
+        });
+
+        // event handler for message buffer
+        socket.on('buffer_ready', function(data) {
+          totalMsgs = data.len;
+          currentPage = data.current_page;
+          updatePagination();
+          console.log('Total msgs: ' + totalMsgs);
+          $('#chat').empty();
+          for (var i = 0; i < data.msgs.length; i++) {
+            const msg = data.msgs[i];
+            // $('#chat').append('<br>' + $('<div/>').append(msg.username + ': ' + msg.content).html());
+            $('#chat').append('<div class="message-card"><b style="color: #000">'+msg.username+'</b> '+ '(' +msg.timestamp+ '): '+msg.content+'</div>');
+          }
+        });
+
+        // form handler
+        $('form#message').submit(function(event) {
+          // formatear timestamp
+          var now = new Date().toLocaleString('en-GB')
+
+          const msg = {
+            'username': $('#username').val(),
+            'content': $('#content').val(),
+            'timestamp': now
+          };
+          socket.emit('send_message', {'msg': msg});
+          $( '#content' ).val( '' ).focus();
+          return false;
+        });
+
+        // api call handler
+        $('#getUsername').click(function(e){
+          e.preventDefault()
+          fetch('https://uinames.com/api/')
+            .then(function(response) {
+              return response.json();
+            })
+            .then(function(myJson) {
+              const username = myJson.name + ' ' + myJson.surname;
+              $('#username').empty();
+              $('#username').val(username);
+              $( '#content' ).val( '' ).focus();
+            });
+        });
+
+        function updatePages() {
+          if (totalMsgs % 5 === 0) {
+            totalPages = Math.trunc(totalMsgs / 5);
+          } else {
+            totalPages = Math.trunc(totalMsgs / 5) + 1;
+          }
+          console.log('Total pages: ' + totalPages);
+        }
+
+        function updatePagination() {
+          updatePages();
+          $('#pagination').empty();
+          for (var i = 1; i <= totalPages; i++) {
+            if (i === currentPage) {
+              $('#pagination').append('<li class="page-item active" id="page-'+i+'"><a class="page-link">'+i+'</a></li>');
+            } else {
+              $('#pagination').append('<li class="page-item" id="page-'+i+'"><a class="page-link">'+i+'</a></li>');
+              $('#page-'+i).click({nextPage: i}, getMsgs);
+              // $('#page-'+i).click({p: i}, print);
+            }
+          }
+        }
+
+        function print(event) {
+          p = event.data.p;
+          console.log(p);
+        }
+
+        function getMsgs(event) {
+          nextPage = event.data.nextPage;
+          // console.log('Next page: ' + nextPage);
+          socket.emit('msgs_buffer', {'current_page': currentPage, 'next': nextPage});
+        }
+
+      });
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Welcome to Simple Chat!</h1>
+      <br>
+      <div class="chat-container">
+        <div id="chat"></div>
+      </div>
+      <br>
+      <nav aria-label="Page navigation example">
+        <ul class="pagination pagination-sm justify-content-center" id="pagination">
+        </ul>
+      </nav>
+      <br>
+      <form id="message" method="POST" action='#'>
+        <input type="text" name="username" id="username" placeholder="username" class="form-control" required>
+        <button id="getUsername" type="button" class="btn btn-primary  btn-block">Get random username</button><br>
+        <input type="text" name="content" id="content" placeholder="content" class="form-control" required>
+        <button type="submit" class="btn btn-primary btn-block" value="Send">Send</button>
+    </form>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  </body>
+</html>
